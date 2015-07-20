@@ -37,22 +37,14 @@ public class LeastSquaresImagePositionLocator implements ImagePositionLocator {
 		// Need a 3rd constant 1 input to represent translations
 		// (compare: w in OpenGL).
 		// While at it calculate the minimum distance as well.
-		double[][] A = new double[markers.size()][3];
-		double[] bx = new double[markers.size()];
-		double[] by = new double[markers.size()];
-		double[] dist = new double[markers.size()];
 		double mindist = Double.POSITIVE_INFINITY;
-		for (int i = 0; i < markers.size(); i++) {
-			A[i][0] = markers.get(i).realpoint.longitude - cur_lon;
-			A[i][1] = markers.get(i).realpoint.latitude - cur_lat;
-			A[i][2] = 1;
-			dist[i] = A[i][0] * A[i][0] + A[i][1] * A[i][1];
-			mindist = Math.min(mindist, dist[i]);
+		for (Marker m : markers) {
+			double lon = m.realpoint.longitude - cur_lon;
+			double lat = m.realpoint.latitude - cur_lat;
+			mindist = Math.min(mindist, lon * lon + lat * lat);
 			if (mindist == 0) {
-				return new Point2D(markers.get(i).imgpoint.x, markers.get(i).imgpoint.y);
+				return new Point2D(m.imgpoint.x, m.imgpoint.y);
 			}
-			bx[i] = markers.get(i).imgpoint.x;
-			by[i] = markers.get(i).imgpoint.y;
 		}
 		// Multiple A and b by transpose(A)*weigths
 		// TODO: review weigths, they are supposed to be
@@ -60,47 +52,48 @@ public class LeastSquaresImagePositionLocator implements ImagePositionLocator {
 		// 1/distance^2 is cheap but just a wild guess, and
 		// GPS signal quality when marker was set could
 		// be used as input in addition...
-		double[] bx3 = new double[3];
-		double[] by3 = new double[3];
-		double[][] AtWA = new double[3][3];
-		for (int i = 0; i < markers.size(); i++) {
-			double weight = mindist / dist[i];
-			bx3[0] += bx[i] * A[i][0] * weight;
-			bx3[1] += bx[i] * A[i][1] * weight;
-			bx3[2] += bx[i] * A[i][2] * weight;
-			by3[0] += by[i] * A[i][0] * weight;
-			by3[1] += by[i] * A[i][1] * weight;
-			by3[2] += by[i] * A[i][2] * weight;
-			AtWA[0][0] += A[i][0] * A[i][0] * weight;
-			AtWA[0][1] += A[i][0] * A[i][1] * weight;
-			AtWA[0][2] += A[i][0] * A[i][2] * weight;
-			AtWA[1][1] += A[i][1] * A[i][1] * weight;
-			AtWA[1][2] += A[i][1] * A[i][2] * weight;
-			AtWA[2][2] += A[i][2] * A[i][2] * weight;
+		double bx30 = 0, bx31 = 0, bx32 = 0;
+		double by30 = 0, by31 = 0, by32 = 0;
+		double AtWA00 = 0, AtWA01 = 0, AtWA02 = 0, AtWA11 = 0, AtWA12 = 0, AtWA22 = 0;
+		for (Marker m : markers) {
+			double a0 = m.realpoint.longitude - cur_lon, a1 = m.realpoint.latitude - cur_lat;
+			double weight = mindist / (a0 * a0 + a1 * a1);
+			double wa0 = a0 * weight, wa1 = a1 * weight, wa2 = weight;
+			double bx = m.imgpoint.x;
+			double by = m.imgpoint.y;
+			bx30 += bx * wa0;
+			bx31 += bx * wa1;
+			bx32 += bx * wa2;
+			by30 += by * wa0;
+			by31 += by * wa1;
+			by32 += by * wa2;
+			AtWA00 += a0 * wa0;
+			AtWA01 += a0 * wa1;
+			AtWA02 += a0 * wa2;
+			AtWA11 += a1 * wa1;
+			AtWA12 += a1 * wa2;
+			AtWA22 += wa2;
+			// Others not calculated as matrix is symmetric
 		}
-		AtWA[1][0] = AtWA[0][1];
-		AtWA[2][0] = AtWA[0][2];
-		AtWA[2][1] = AtWA[1][2];
 		// TODO: if det == 0 create extra point like for 2 markers case
 		// Also warn if near 0 and thus unstable
-		double detAtWA = AtWA[0][0] * AtWA[1][1] * AtWA[2][2] +
-			AtWA[0][1] * AtWA[1][2] * AtWA[2][0] +
-			AtWA[0][2] * AtWA[1][0] * AtWA[2][1] -
-			AtWA[0][2] * AtWA[1][1] * AtWA[2][0] -
-			AtWA[1][2] * AtWA[2][1] * AtWA[0][0] -
-			AtWA[2][2] * AtWA[0][1] * AtWA[1][0];
+		// Make use of the fact that matrix is symmetric
+		double detAtWA = AtWA00 * AtWA11 * AtWA22 +
+			2 * AtWA01 * AtWA12 * AtWA02 -
+			AtWA02 * AtWA11 * AtWA02 -
+			AtWA12 * AtWA12 * AtWA00 -
+			AtWA22 * AtWA01 * AtWA01;
 		// Inverse the matrix. Standard cross-product method.
 		// We need only the last row though
-		double[] inverse = new double[3];
-		inverse[0] = AtWA[1][0] * AtWA[2][1] - AtWA[1][1] * AtWA[2][0];
-		inverse[1] = AtWA[2][0] * AtWA[0][1] - AtWA[2][1] * AtWA[0][0];
-		inverse[2] = AtWA[0][0] * AtWA[1][1] - AtWA[0][1] * AtWA[1][0];
+		double inverse0 = AtWA01 * AtWA12 - AtWA11 * AtWA02;
+		double inverse1 = AtWA02 * AtWA01 - AtWA12 * AtWA00;
+		double inverse2 = AtWA00 * AtWA11 - AtWA01 * AtWA01;
 		// Use inverse matrix to solve linear system
 		// The last coefficient is the offset between the coordinate systems.
 		// As we recentered GPS to our current position, the offset is our map position
-		double posx = inverse[0] * bx3[0] + inverse[1] * bx3[1] + inverse[2] * bx3[2];
+		double posx = inverse0 * bx30 + inverse1 * bx31 + inverse2 * bx32;
 		posx /= detAtWA;
-		double posy = inverse[0] * by3[0] + inverse[1] * by3[1] + inverse[2] * by3[2];
+		double posy = inverse0 * by30 + inverse1 * by31 + inverse2 * by32;
 		posy /= detAtWA;
 		// Apply found coordinate transformation
 		return new Point2D(posx, posy);

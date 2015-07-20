@@ -28,11 +28,11 @@ import java.util.concurrent.Callable;
  */
 public class LocationDataManager {
 	// seconds until would be accepted
-	static int MAX_POINT_DENIAL_TIME = 10;
+	static final int MAX_POINT_DENIAL_TIME = 10;
 	// accepted movement speed in meters per second
-	static int MAX_MOVEMENT_SPEED = 20;
+	static final int MAX_MOVEMENT_SPEED = 20;
 	// seconds untill the last GpsPoint cannot be used as a marker anymore
-	static int MAX_VALID_GPS_TIME = 30;
+	static final int MAX_VALID_GPS_TIME = 30;
 
 	// track data
 	Point2D imageSize;
@@ -59,9 +59,10 @@ public class LocationDataManager {
 
 		this.imageSize = imageSize;
 		lastGPSFixTime = iohandler.getLastGpsPointTime();
-		int numberOfGpsPoints = iohandler.getAllGpsPoints().size();
+		ArrayList<GpsPoint> gpsPoints = iohandler.getAllGpsPoints();
+		int numberOfGpsPoints = gpsPoints.size();
 		if (numberOfGpsPoints != 0)
-			lastGpsPoint = iohandler.getAllGpsPoints().get(numberOfGpsPoints - 1);
+			lastGpsPoint = gpsPoints.get(numberOfGpsPoints - 1);
 		
 		imagePositionAlg = ipl;
 	}
@@ -157,12 +158,13 @@ public class LocationDataManager {
 	public void refreshLastPosition() {
 		// Send new estimated user position
 		if (lastGpsPoint != null) {
-			if (iohandler.getAllMarkers().size() != 0) {
+			ArrayList<Marker> markers = iohandler.getAllMarkers();
+			if (markers.size() != 0) {
 				Point2D tmp;
-				if (iohandler.getAllMarkers().size() == 1) {
-					tmp = iohandler.getAllMarkers().get(0).imgpoint;
+				if (markers.size() == 1) {
+					tmp = markers.get(0).imgpoint;
 				} else {
-					imagePositionAlg.newMarkerAdded(iohandler.getAllMarkers());
+					imagePositionAlg.newMarkerAdded(markers);
 					tmp = imagePositionAlg.getPointPosition(lastGpsPoint);
 				}
 				reportNewImagePoint(tmp);
