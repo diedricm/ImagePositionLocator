@@ -16,9 +16,13 @@
 
 package de.hu_berlin.informatik.spws2014.ImagePositionLocator;
 
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.FileReader;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
@@ -64,6 +68,15 @@ public class LDMIOTrack implements ILDMIOHandler {
 		}
 		return true;
 	}
+
+	private void readBinary(String pathToFile) throws IOException {
+		File dbgTrackfile = new File(pathToFile);
+		FileInputStream fis = new FileInputStream(dbgTrackfile);
+		ObjectInputStream ois = new ObjectInputStream(fis);
+		readTrackFile(ois);
+		ois.close();
+		fis.close();
+	}
 	
 	public LDMIOTrack(String pathToFile) throws IOException {
 		filename = pathToFile;
@@ -71,11 +84,32 @@ public class LDMIOTrack implements ILDMIOHandler {
 		boolean isFileValid = dbgTrackfile.exists();
 		
 		if (isFileValid) {
-			FileInputStream fis = new FileInputStream(dbgTrackfile);
-			ObjectInputStream ois = new ObjectInputStream(fis);
-			readTrackFile(ois);
-			ois.close();
-			fis.close();
+			BufferedReader br = new BufferedReader(new FileReader(dbgTrackfile));
+			br.mark(1);
+			int first_byte = br.read();
+			br.reset();
+			if (first_byte < '0' || first_byte > '9') {
+				readBinary(pathToFile);
+			} else {
+				gpspath = new ArrayList<GpsPoint>();
+				markers = new ArrayList<Marker>();
+				int version = Integer.valueOf(br.readLine());
+				int gpspath_size = Integer.valueOf(br.readLine());
+				for (int i = 0; i < gpspath_size; i++) {
+					String line = br.readLine();
+					String[] values = line.split(" ");
+					gpspath.add(new GpsPoint(Double.valueOf(values[1]), Double.valueOf(values[0]), Long.valueOf(values[2])));
+				}
+				int markers_size = Integer.valueOf(br.readLine());
+				for (int i = 0; i < markers_size; i++) {
+					String line = br.readLine();
+					String[] values = line.split(" ");
+					Point2D p = new Point2D(Double.valueOf(values[0]), Double.valueOf(values[1]));
+					GpsPoint g = new GpsPoint(Double.valueOf(values[3]), Double.valueOf(values[2]), Long.valueOf(values[4]));
+					markers.add(new Marker(p, Long.valueOf(values[5]), g));
+				}
+				br.close();
+			}
 		}
 		if (!isFileValid || gpspath == null || markers == null) {
 			gpspath = new ArrayList<GpsPoint>();
@@ -215,11 +249,20 @@ public class LDMIOTrack implements ILDMIOHandler {
 	public void save() {
 		File dbgTrackfile = new File(filename);
 		try {
-			FileOutputStream fis = new FileOutputStream(dbgTrackfile);
-			ObjectOutputStream oos = new ObjectOutputStream(fis);
-			writeTrackFile(oos);
-			oos.close();
-			fis.close();
+			BufferedWriter bw = new BufferedWriter(new FileWriter(dbgTrackfile));
+			bw.write("4\n");
+			bw.write(gpspath.size() + "\n");
+			for (GpsPoint p : gpspath) {
+				bw.write(p.latitude + " " + p.longitude + " " + p.time + "\n");
+			}
+			bw.write(markers.size() + "\n");
+			for (Marker m : markers) {
+				bw.write(m.imgpoint.x + " " + m.imgpoint.y + " " +
+				         m.realpoint.latitude + " " + m.realpoint.longitude + " " + m.realpoint.time + " " +
+				         m.time + "\n");
+			}
+			bw.write(time + "\n");
+			bw.close();
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
